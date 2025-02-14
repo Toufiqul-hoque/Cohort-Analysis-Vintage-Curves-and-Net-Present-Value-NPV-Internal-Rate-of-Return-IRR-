@@ -1,57 +1,93 @@
 # Cohort-Analysis-Vintage-Curves-and-Net-Present-Value-NPV-Internal-Rate-of-Return-IRR-
 predict how different cohorts (or vintages) of credit accounts perform over time, estimating return and loss trends.
 Initial Data Analysis & Interpretation
-Dataset Overview
-•	The dataset contains 30,000 credit card clients.
-•	The main attributes include:
-o	LIMIT_BAL: Credit limit for each user.
-o	PAY_X (PAY_1 to PAY_6): Past monthly payment statuses (e.g., whether they paid on time, were late, or defaulted).
-o	BILL_AMTX (BILL_AMT1 to BILL_AMT6): Bill statements over the past six months.
-o	PAY_AMTX (PAY_AMT1 to PAY_AMT6): Payment amounts over the past six months.
-o	DEFAULT: Binary indicator (1 = defaulted, 0 = did not default).
+import pandas as pd
 
-Key Observations
-1.	Default Rate:
-o	Mean DEFAULT rate = 22.12% → About 22% of the clients defaulted on their payments.
-2.	Credit Limits:
-o	Mean = $167,484, but the range is wide (min = $10,000, max = $1,000,000).
-o	A high standard deviation (~$129,748) suggests a large variance in credit limits.
-3.	Age Distribution:
-o	Clients range from 21 to 79 years old.
-o	Median age is 34, suggesting a younger demographic.
-4.	Repayment Behavior (PAY_X Variables):
-o	Negative values indicate early repayment or no delay.
-o	Mean values are close to 0, suggesting that most clients pay on time.
-o	However, the maximum values go up to 8, meaning some clients are over 8 months late on payments.
-5.	Bill & Payment Amounts:
-o	The mean bill amount is around $40,000 per month, with some clients having negative balances (overpayments or credits).
-o	Payment amounts vary significantly, with some clients making huge payments (up to $1.68 million in a single month).
-We now analyze how different cohorts of customers default over time. A cohort is defined based on the AGE of the client (as a proxy for when they likely opened the account).
+# Load the uploaded dataset
+file_path = "C:/Users/sazid/Desktop/documents/Tech prep/C1B/New folder/default+of+credit+card+clients/default of credit card clients.csv"
+data = pd.read_csv(file_path)
 
-Interpretation of Cohort Analysis (Default Rate by Age)
-•	Young Borrowers (20-29 years old) have a default rate of ~22.8%, slightly above average.
-•	Middle-aged Borrowers (30-39 years old) show the lowest default rate (~20.3%).
-•	Older Borrowers (50-69 years old) have an increasing default rate (from ~24.8% to ~28.3%).
-•	Senior Borrowers (70+ years old) show a high default rate (28%), possibly due to fixed incomes or retirement challenges.
-Net Present Value (NPV) & Internal Rate of Return (IRR) Analysis
-We'll now estimate:
+# Display basic information about the dataset
+data.info(), data.head()
+# Clean column names by renaming them properly
+data.columns = [
+    "ID", "LIMIT_BAL", "SEX", "EDUCATION", "MARRIAGE", "AGE", 
+    "PAY_1", "PAY_2", "PAY_3", "PAY_4", "PAY_5", "PAY_6", 
+    "BILL_AMT1", "BILL_AMT2", "BILL_AMT3", "BILL_AMT4", "BILL_AMT5", "BILL_AMT6", 
+    "PAY_AMT1", "PAY_AMT2", "PAY_AMT3", "PAY_AMT4", "PAY_AMT5", "PAY_AMT6", 
+    "DEFAULT"
+]
 
-NPV: The expected financial return from different customer cohorts.
-IRR: The return percentage of a typical credit account.
-We assume:
+# Convert numeric columns to appropriate types
+numeric_columns = data.columns[1:]
+data[numeric_columns] = data[numeric_columns].apply(pd.to_numeric, errors='coerce')
 
-The interest rate is 2% per month.
-Defaulted accounts stop paying and generate losses.
-Cash flow per cohort is estimated based on their credit limit and repayment rates.
+# Display summary statistics
+data.describe()
+import matplotlib.pyplot as plt
+import seaborn as sns
 
-Updated NPV & IRR Analysis Interpretation
-•	The Net Present Value (NPV) remains unchanged, confirming that the previous calculation was correct.
-•	Internal Rate of Return (IRR) now computes for most cohorts, but:
-o	The 30-39, 40-49, and 60-69 age groups have negative IRRs (-1.68, -1.67, -1.67 respectively), suggesting that the cash flows from these cohorts are not generating positive financial returns under the assumed conditions.
-o	The 50-59 cohort has an IRR of approximately -0.21, which is still negative but slightly better than other groups.
-o	The 20-29 cohort IRR remains NaN, meaning the Newton's method might not have found a solution for this group.
-Key Takeaways
-1.	All IRRs are negative, meaning the lending conditions might need improvement (higher interest rates, better risk assessment).
-2.	The 30-39 age group is still the most profitable, as shown by the highest NPV.
-3.	Younger and older cohorts seem riskier, with lower NPVs and worse IRRs, requiring stricter credit policies.
+# Create age groups (cohorts)
+bins = [20, 30, 40, 50, 60, 70, 80]
+labels = ['20-29', '30-39', '40-49', '50-59', '60-69', '70+']
+data['AgeGroup'] = pd.cut(data['AGE'], bins=bins, labels=labels, right=False)
 
+# Calculate default rate per age group
+cohort_default_rate = data.groupby('AgeGroup')['DEFAULT'].mean().reset_index()
+
+# Plot default rate per cohort
+plt.figure(figsize=(10, 6))
+sns.barplot(data=cohort_default_rate, x='AgeGroup', y='DEFAULT', palette="Blues_r")
+plt.title('Default Rate by Age Cohort')
+plt.xlabel('Age Group')
+plt.ylabel('Default Rate')
+plt.ylim(0, 0.3)
+plt.show()
+
+# Display the default rates per age group
+cohort_default_rate
+
+
+# Assume the monthly interest rate and discount rate
+interest_rate = 0.02  # 2% monthly
+discount_rate = 0.01  # 1% monthly
+
+# Estimate cohort-level cash flows
+cohort_data = data.groupby("AgeGroup").agg(
+    AverageCreditLimit=("LIMIT_BAL", "mean"),
+    DefaultRate=("DEFAULT", "mean"),
+    CustomerCount=("DEFAULT", "count")
+).reset_index()
+
+# Calculate monthly cash flows per cohort
+cohort_data["MonthlyCashFlow"] = cohort_data["AverageCreditLimit"] * (1 - cohort_data["DefaultRate"]) * interest_rate
+
+
+
+
+import numpy as np
+
+# Define NPV function
+def npv(rate, cashflows):
+    return sum(cf / (1 + rate) ** i for i, cf in enumerate(cashflows))
+
+# Define IRR function using Newton's method
+def irr(cashflows, max_iterations=1000, tol=1e-6):
+    """Compute IRR using Newton's method."""
+    rate = 0.1  # Initial guess
+    for _ in range(max_iterations):
+        npv_value = sum(cf / (1 + rate) ** i for i, cf in enumerate(cashflows))
+        npv_derivative = sum(-i * cf / (1 + rate) ** (i + 1) for i, cf in enumerate(cashflows))
+        
+        if abs(npv_value) < tol:  # Convergence condition
+            return rate
+        rate -= npv_value / npv_derivative  # Newton-Raphson update
+        
+    return None  # No solution found
+
+# Recalculate NPV and IRR using the custom functions
+cohort_data["NPV"] = cohort_data["MonthlyCashFlow"].apply(lambda x: npv(discount_rate, [x] * 12))
+cohort_data["IRR"] = cohort_data["MonthlyCashFlow"].apply(lambda x: irr([-cohort_data["AverageCreditLimit"].mean()] + [x] * 12))
+
+
+cohort_data
